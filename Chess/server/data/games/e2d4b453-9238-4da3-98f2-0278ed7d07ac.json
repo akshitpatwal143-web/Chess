@@ -1,0 +1,13 @@
+{
+  "moves": [
+    "e4"
+  ],
+  "players": [
+    {
+      "id": "host",
+      "publicKeyB64": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2ea/RlMLSLrvNbJr43vwFnPbfkqFUvzad3txB/lgCjiDByBEgHX4TDD9goqmKZcvll72Th/VIQqLUsQyhFInfh97wNPbFUE0joOoEo7EYimh3wiEjUvnyRSRstda5tlGbrbqE7B+09hay8Pf9MDCtvNvbbc831Zpf4HXjc847iCoU1O+swjq3JPe4+GyMK1s7KlXN3kJXgHwe7G8hR3oWuKdD6Z3zCMJA4ftL1FVmfxyzhN9D43EZtgeo1b09jKe9IGrqMoPfH8Ui1WGun2amJ/ule+fil6dOHOwwO+dj34YSzFjqA9GBnUVqveO86WkqLstzCTocoaLKmW+NHHi9wIDAQAB"
+    }
+  ],
+  "nonce": "e046355efe7e8189387f36e91405b632",
+  "updatedAt": "2025-09-01T17:38:10.794Z"
+}
