@@ -29,12 +29,47 @@ export default function App() {
   const [isGameOver, setGameOver] = useState(false);
   const [gameOverReason, setGameOverReason] = useState("");
   const [redoMoves, setRedoMoves] = useState([]);
-
+  const [gameMode, setGameMode] = useState("idle"); // Can be 'idle', 'multiplayer', or 'computer'
 
   // ✅ New state to manage game session
   const [gameId, setGameId] = useState(getGameIdFromUrl());
   const [playerColor, setPlayerColor] = useState(null); // 'white' or 'black'
 
+  // ✅ ADD THIS ENTIRE useEffect HOOK
+  useEffect(() => {
+    // This function runs when it's the computer's turn
+    const makeComputerMove = () => {
+      // Exit if the game is over or it's not the computer's turn
+      if (game.isGameOver() || game.turn() !== 'b') return;
+
+      // Get a list of all possible moves
+      const possibleMoves = game.moves({ verbose: true });
+
+      // If there are no moves, the game is over
+      if (possibleMoves.length === 0) return;
+
+      // Pick a random move
+      const randomIndex = Math.floor(Math.random() * possibleMoves.length);
+      const move = possibleMoves[randomIndex];
+
+      // Make the move on the board
+      const g = new Chess(game.fen());
+      g.move(move.san);
+
+      // Update the state after a short delay to feel more natural
+      setTimeout(() => {
+        setGame(g);
+        setFen(g.fen());
+        // We are not updating the 'moves' array here for simplicity,
+        // but you could add g.history() if you wanted to log computer moves.
+      }, 300); // 300ms delay
+    };
+
+    // Only run this logic if we are in 'computer' mode
+    if (gameMode === 'computer') {
+      makeComputerMove();
+    }
+  }, [game, gameMode]); // This effect runs whenever the 'game' or 'gameMode' state changes
   // This effect runs once when the component mounts to join a game
   useEffect(() => {
     const joinExistingGame = async (id) => {
@@ -67,11 +102,28 @@ export default function App() {
       joinExistingGame(urlGameId);
     }
   }, []);
+  const handlePlayComputerClick = () => {
+    // Reset the game
+    const newGame = new Chess();
+    setGame(newGame);
+    setFen(newGame.fen());
+    setMoves([]);
+    setRedoMoves([]);
+    setGameOver(false);
+    setGameOverReason("");
+    setGameId(null); // Clear any existing multiplayer gameId
+    setShowQr(false); // Hide QR code if it was open
 
+    // Set the mode to 'computer' and player as White
+    setGameMode("computer");
+    setPlayerColor('white'); // Player is always white against the computer
+    console.log("Starting a new game against the computer.");
+  };
 
   // ✅ Modified Multiplayer button click handler
   const handleMultiplayerClick = async () => {
-    console.log("Multiplayer button clicked!"); // 👈 Log 1
+    setGameMode("multiplayer");
+    console.log("Multiplayer button clicked!");
     setErr("");
     try {
       const keys = generateKeys();
@@ -235,21 +287,29 @@ export default function App() {
     }
   };
   // AFTER
+  // ✅ REPLACE your old onDrop function with this one
   const onDrop = useCallback((sourceSquare, targetSquare) => {
     const g = new Chess(game.fen());
     const moveObj = g.move({
       from: sourceSquare,
       to: targetSquare,
-      promotion: "q",
+      promotion: "q", // always promote to a queen for simplicity
     });
 
-    if (!moveObj) return false;
+    // If the move is illegal, do nothing
+    if (moveObj === null) return false;
 
+    // Update the board state immediately for the player's move
     setGame(g);
     setFen(g.fen());
-    void addMove(moveObj.san);
+
+    // If in a multiplayer game, send the move to the server
+    if (gameMode === 'multiplayer') {
+      void addMove(moveObj.san);
+    }
+
     return true;
-  }, [game, addMove]);
+  }, [game, gameMode, addMove]); // ✅ Add gameMode to dependency array
 
   const turn = game.turn(); // 'w' or 'b'
   const nextTurn = turn === "w" ? "White" : "Black";
@@ -332,7 +392,10 @@ export default function App() {
             position={fen}
             onPieceDrop={onDrop}
             boardWidth={boardWidth}
-            arePiecesDraggable={isMyTurn}
+            arePiecesDraggable={
+              (gameMode === 'multiplayer' && isMyTurn) ||
+              (gameMode === 'computer' && game.turn() === 'w')
+            }
           />
 
         </div>
@@ -391,7 +454,7 @@ export default function App() {
                 {nextTurn}
               </div>
 
-              <button onClick={() => alert("Coming soon: Play with computer!")}>
+              <button onClick={handlePlayComputerClick} disabled={gameMode !== 'idle'}>
                 Play with Computer
               </button>
               <button onClick={handleMultiplayerClick} disabled={!!gameId}>
