@@ -15,7 +15,7 @@ const getGameIdFromUrl = () => {
   return null;
 }
 
-const socket = io("10.138.129.227:3001");
+const socket = io("192.168.1.171:3001");
 
 export default function App() {
   const [showQr, setShowQr] = useState(false);
@@ -34,43 +34,34 @@ export default function App() {
   // ✅ New state to manage game session
   const [gameId, setGameId] = useState(getGameIdFromUrl());
   const [playerColor, setPlayerColor] = useState(null); // 'white' or 'black'
+  // ✅ ADD THIS NEW HOOK TO DETECT GAME OVER
 
-  // ✅ ADD THIS ENTIRE useEffect HOOK
   useEffect(() => {
-    // This function runs when it's the computer's turn
-    const makeComputerMove = () => {
-      // Exit if the game is over or it's not the computer's turn
-      if (game.isGameOver() || game.turn() !== 'b') return;
+    // Only check for game over if we are in computer mode and the game is not already over
+    if (gameMode === 'computer' && !isGameOver) {
+      if (game.isGameOver()) {
+        setGameOver(true); // Update the state to show the game has ended
 
-      // Get a list of all possible moves
-      const possibleMoves = game.moves({ verbose: true });
+        let reason = "Game Over";
+        if (game.isCheckmate()) {
+          // The winner is the player whose turn it is NOT.
+          const winner = game.turn() === 'w' ? 'Black' : 'White';
+          reason = `Checkmate! ${winner} wins.`;
+        } else if (game.isStalemate()) {
+          reason = "Stalemate! It's a draw.";
+        } else if (game.isThreefoldRepetition()) {
+          reason = "Draw by Threefold Repetition.";
+        } else if (game.isInsufficientMaterial()) {
+          reason = "Draw by Insufficient Material.";
+        }
 
-      // If there are no moves, the game is over
-      if (possibleMoves.length === 0) return;
-
-      // Pick a random move
-      const randomIndex = Math.floor(Math.random() * possibleMoves.length);
-      const move = possibleMoves[randomIndex];
-
-      // Make the move on the board
-      const g = new Chess(game.fen());
-      g.move(move.san);
-
-      // Update the state after a short delay to feel more natural
-      setTimeout(() => {
-        setGame(g);
-        setFen(g.fen());
-        // We are not updating the 'moves' array here for simplicity,
-        // but you could add g.history() if you wanted to log computer moves.
-      }, 300); // 300ms delay
-    };
-
-    // Only run this logic if we are in 'computer' mode
-    if (gameMode === 'computer') {
-      makeComputerMove();
+        setGameOverReason(reason);
+        // Use an alert to make it obvious to the user
+        alert(reason);
+      }
     }
-  }, [game, gameMode]); // This effect runs whenever the 'game' or 'gameMode' state changes
-  // This effect runs once when the component mounts to join a game
+  }, [game, gameMode, isGameOver]); // This hook runs every time the game state changes
+
   useEffect(() => {
     const joinExistingGame = async (id) => {
       let keys = getKeys(id);
@@ -91,6 +82,7 @@ export default function App() {
         console.log("Successfully joined as Player 2 (Black)");
         setPlayerColor('black');
         setGameId(id);
+        setGameMode('multiplayer');
         socket.emit("game:join", id);
       } catch (e) {
         setErr(`Failed to join game: ${e.message}`);
@@ -204,43 +196,7 @@ export default function App() {
       socket.off("game:end");
     };
   }, []);
-  const addMove = useCallback(async (san) => {
-    if (!gameId) {
-      setErr("You are not in a game session.");
-      return;
-    }
-    const keys = getKeys(gameId);
-    if (!keys) {
-      setErr("Your cryptographic keys are missing for this game.");
-      return;
-    }
-
-    setLoading(true);
-    setErr("");
-    try {
-      const dataToSign = `${gameId}|${san}`;
-      const signature = signData(keys.privateKey, dataToSign);
-      const res = await fetch(`/api/game/${gameId}/move`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          move: san,
-          publicKey: keys.publicKey,
-          signature: signature,
-        }),
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || "Add move failed");
-    } catch (e) {
-      setErr(e.message);
-      const g = new Chess();
-      moves.forEach((m) => g.move(m));
-      setGame(g);
-      setFen(g.fen());
-    } finally {
-      setLoading(false);
-    }
-  }, [gameId, moves]); // 👈 Add dependencies
+  // 👈 Add dependencies
   // ✅ ADD THESE FUNCTIONS TO YOUR COMPONENT
   const undo = async () => {
     if (!gameId) return;
@@ -287,42 +243,119 @@ export default function App() {
     }
   };
   // AFTER
-  // ✅ REPLACE your old onDrop function with this one
-  const onDrop = useCallback((sourceSquare, targetSquare) => {
-    const g = new Chess(game.fen());
-    const moveObj = g.move({
-      from: sourceSquare,
-      to: targetSquare,
-      promotion: "q", // always promote to a queen for simplicity
-    });
-
-    // If the move is illegal, do nothing
-    if (moveObj === null) return false;
-
-    // Update the board state immediately for the player's move
-    setGame(g);
-    setFen(g.fen());
-
-    // If in a multiplayer game, send the move to the server
-    if (gameMode === 'multiplayer') {
-      void addMove(moveObj.san);
+  const addMove = useCallback(async (san) => {
+    if (!gameId) {
+      setErr("You are not in a game session.");
+      return;
+    }
+    const keys = getKeys(gameId);
+    if (!keys) {
+      setErr("Your cryptographic keys are missing for this game.");
+      return;
     }
 
-    return true;
-  }, [game, gameMode, addMove]); // ✅ Add gameMode to dependency array
+    setLoading(true);
+    setErr("");
+    try {
+      const dataToSign = `${gameId}|${san}`;
+      const signature = signData(keys.privateKey, dataToSign);
+      const res = await fetch(`/api/game/${gameId}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          move: san,
+          publicKey: keys.publicKey,
+          signature: signature,
+        }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "Add move failed");
+    } catch (e) {
+      setErr(e.message);
+      const g = new Chess();
+      moves.forEach((m) => g.move(m));
+      setGame(g);
+      setFen(g.fen());
+    } finally {
+      setLoading(false);
+    }
+  }, [gameId, moves]); 
+// ✅ ADD THIS ENTIRE FUNCTION
+const onDrop = useCallback((sourceSquare, targetSquare) => {
+  // Create a copy to safely validate the move
+  const gameCopy = new Chess(game.fen());
+  const move = gameCopy.move({ from: sourceSquare, to: targetSquare, promotion: "q" });
 
-  const turn = game.turn(); // 'w' or 'b'
-  const nextTurn = turn === "w" ? "White" : "Black";
+  // If the move is illegal, do nothing
+  if (move === null) return false;
 
-  // Disable board if it's not our turn
-  const isMyTurn =
-    (playerColor === 'white' && turn === 'w') ||
-    (playerColor === 'black' && turn === 'b');
-  console.log({
-    playerColor: playerColor,
-    turn: game.turn(),
-    isMyTurn: isMyTurn
-  });
+  // In multiplayer, we just send the move and wait for the server's update
+  if (gameMode === 'multiplayer') {
+    void addMove(move.san);
+  } else {
+    // In computer mode, we update the state directly by rebuilding the history
+    const newMoves = [...moves, move.san];
+    const newGame = new Chess();
+    newMoves.forEach(m => newGame.move(m));
+    
+    setGame(newGame);
+    setMoves(newMoves);
+    setFen(newGame.fen());
+  }
+  
+  return true;
+}, [game, gameMode, addMove, moves]); // Dependencies are important
+useEffect(() => {
+  const makeComputerMove = () => {
+    // Exit if not the computer's turn
+    if (gameMode !== 'computer' || game.isGameOver() || game.turn() !== 'b') {
+      return;
+    }
+
+    // 1. Find a random move to make
+    const possibleMoves = game.moves({ verbose: true });
+    if (possibleMoves.length === 0) return;
+    const randomIndex = Math.floor(Math.random() * possibleMoves.length);
+    const move = possibleMoves[randomIndex];
+
+    // 2. Append the computer's move to our existing 'moves' array
+    const newMoves = [...moves, move.san];
+
+    // 3. Create a fresh game object from the START
+    const newGame = new Chess();
+    // 4. Replay ALL moves from our complete history onto the fresh game
+    newMoves.forEach(m => newGame.move(m));
+
+    // 5. Update the state after a short delay with the new, correct info
+    setTimeout(() => {
+      setGame(newGame);
+      setMoves(newMoves);
+      setFen(newGame.fen());
+    }, 300);
+  };
+
+  makeComputerMove();
+}, [game, gameMode, moves]); // ✅ IMPORTANT: 'moves' must be in the dependency array
+  // ✅ REPLACE WITH THIS CORRECTED BLOCK
+const turn = game.turn();
+const nextTurn = turn === "w" ? "White" : "Black";
+
+// This is the main logic fix. It now correctly handles the state for both players.
+const isMyTurn = gameMode === 'multiplayer' 
+  ? (playerColor === 'white' && turn === 'w') || (playerColor === 'black' && turn === 'b')
+  : (gameMode === 'computer' && turn === 'w');
+
+// The chessboard's draggable prop now just uses our reliable isMyTurn variable.
+const arePiecesDraggable = isMyTurn;
+
+// Optional: Keep this log for debugging if you want
+console.log({
+  gameMode: gameMode,
+  playerColor: playerColor,
+  turn: turn,
+  isMyTurn: isMyTurn,
+  arePiecesDraggable: arePiecesDraggable
+});
 
   // --- RENDER LOGIC ---
   // (Your JSX remains mostly the same, but you would replace your
@@ -392,10 +425,7 @@ export default function App() {
             position={fen}
             onPieceDrop={onDrop}
             boardWidth={boardWidth}
-            arePiecesDraggable={
-              (gameMode === 'multiplayer' && isMyTurn) ||
-              (gameMode === 'computer' && game.turn() === 'w')
-            }
+            arePiecesDraggable={arePiecesDraggable}
           />
 
         </div>
@@ -598,7 +628,8 @@ export default function App() {
                   background: "transparent",
                 }}
               >
-                <button onClick={() => alert("Coming soon: Play with computer!")}>
+
+                <button onClick={handlePlayComputerClick} disabled={gameMode !== 'idle'}>
                   Play with Computer
                 </button>
 
@@ -697,3 +728,4 @@ export default function App() {
     </div >
   );
 }
+

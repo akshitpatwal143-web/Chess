@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       // Proxy API requests to your backend server
       '/api': {
-        target: 'http://10.138.129.227:3001', // ✅ CORRECT IP ADDRESS
+        target: 'http://192.168.1.171:3001',
         changeOrigin: true,
         secure: false,
       },
