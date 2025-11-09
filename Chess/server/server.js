@@ -23,6 +23,10 @@ const io = new Server(server, {
 // ✅ SETUP MIDDLEWARE HERE
 app.use(cors());          // 👈 Add this line to allow all CORS requests
 app.use(express.json());  // 👈 Move this line here
+// Add after your other app.use(...) lines and before server.listen(...)
+app.get('/', (_req, res) => {
+  res.type('json').send({ ok: true, message: 'Chess backend is running. Use /api/health or socket connections.' });
+});
 
 const execFileAsync = promisify(execFile);
 
