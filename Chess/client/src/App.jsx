@@ -15,7 +15,7 @@ const getGameIdFromUrl = () => {
   return null;
 }
 
-const socket = io("192.168.1.171:3001");
+const socket = io("https://chess-backend-88yn.onrender.com");
 
 export default function App() {
   const [showQr, setShowQr] = useState(false);
@@ -199,14 +199,30 @@ export default function App() {
   // 👈 Add dependencies
   // ✅ ADD THESE FUNCTIONS TO YOUR COMPONENT
   const undo = async () => {
-    if (!gameId) return;
     setLoading(true);
     setErr("");
     try {
-      const res = await fetch(`/api/game/${gameId}/undo`, { method: "POST" });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || "Undo failed");
-      // Update will come via socket, no need to set state here
+      if (gameMode === 'computer') {
+        // Handle local undo for computer mode
+        if (moves.length === 0) return;
+        const newMoves = moves.slice(0, -2); // Remove last 2 moves (player and computer)
+        const newRedoMoves = [...redoMoves, ...moves.slice(-2)];
+        
+        // Recreate game state
+        const newGame = new Chess();
+        newMoves.forEach(m => newGame.move(m));
+        
+        setGame(newGame);
+        setMoves(newMoves);
+        setRedoMoves(newRedoMoves);
+        setFen(newGame.fen());
+      } else if (gameId) {
+        // Handle server-side undo for multiplayer mode
+        const res = await fetch(`/api/game/${gameId}/undo`, { method: "POST" });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "Undo failed");
+        // Update will come via socket, no need to set state here
+      }
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -214,13 +230,117 @@ export default function App() {
     }
   };
   const redo = async () => {
-    if (!gameId || redoMoves.length === 0) return;
+    if (redoMoves.length === 0) return;
     setLoading(true);
     setErr("");
     try {
-      const res = await fetch(`/api/game/${gameId}/redo`, { method: "POST" });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || "Redo failed");
+      if (gameMode === 'computer') {
+        // Handle local redo for computer mode
+        // Get the moves to redo (should be a pair of moves - player and computer)
+        // If we have an odd number of moves in redoMoves (like in checkmate),
+        // we should take just that one move
+        // Always take one move at a time for redo to ensure proper game state
+        const moveToRedo = redoMoves[redoMoves.length - 1];
+        const newRedoMoves = redoMoves.slice(0, -1);
+        
+        // Add the move back to the game
+        const newMoves = [...moves, moveToRedo];
+        
+        // Recreate game state with all moves
+        const newGame = new Chess();
+        
+        // Apply all moves
+        for (let i = 0; i < newMoves.length; i++) {
+          const m = newMoves[i];
+          try {
+            // Try the move as is first
+            let result = newGame.move(m);
+            if (!result) {
+              // Try with simplified notation
+              const simplifiedMove = m.replace(/#$/, ''); // Remove checkmate symbol
+              result = newGame.move(simplifiedMove);
+              
+              if (!result) {
+                // If still failing, try to make the move using from/to squares
+                const possibleMoves = newGame.moves({ verbose: true });
+                const matchingMove = possibleMoves.find(move => 
+                  move.san === m || move.san === simplifiedMove
+                );
+                
+                if (matchingMove) {
+                  result = newGame.move({
+                    from: matchingMove.from,
+                    to: matchingMove.to,
+                    promotion: matchingMove.promotion
+                  });
+                }
+                
+                if (!result) {
+                  console.error(`Failed move:`, m, `Current position:`, newGame.fen());
+                  throw new Error(`Invalid move: ${m}`);
+                }
+              }
+            }
+          } catch (moveError) {
+            console.error(`Error applying move ${i + 1}/${newMoves.length}:`, m);
+            console.error(`Position before error:`, newGame.fen());
+            throw moveError;
+          }
+        }
+        
+        // Log the successful redo operation
+        console.log('Redo successful:', {
+          redoMove: moveToRedo,
+          newPosition: newGame.fen(),
+          remainingRedoMoves: newRedoMoves
+        });
+        
+        // Update state only if all moves were successful
+        setGame(newGame);
+        setMoves(newMoves);
+        setRedoMoves(newRedoMoves);
+        setFen(newGame.fen());
+        
+        // Check if this redo leads to a game over state
+        if (newGame.isGameOver()) {
+          setGameOver(true);
+          let reason = "Game Over";
+          if (newGame.isCheckmate()) {
+            const winner = newGame.turn() === 'w' ? 'Black' : 'White';
+            reason = `Checkmate! ${winner} wins.`;
+          } else if (newGame.isStalemate()) {
+            reason = "Stalemate! It's a draw.";
+          } else if (newGame.isThreefoldRepetition()) {
+            reason = "Draw by Threefold Repetition.";
+          } else if (newGame.isInsufficientMaterial()) {
+            reason = "Draw by Insufficient Material.";
+          }
+          setGameOverReason(reason);
+        }
+        
+        // Check if this redo leads to a game over state
+        if (newGame.isGameOver()) {
+          setGameOver(true);
+          let reason = "Game Over";
+          if (newGame.isCheckmate()) {
+            const winner = newGame.turn() === 'w' ? 'Black' : 'White';
+            reason = `Checkmate! ${winner} wins.`;
+          } else if (newGame.isStalemate()) {
+            reason = "Stalemate! It's a draw.";
+          } else if (newGame.isThreefoldRepetition()) {
+            reason = "Draw by Threefold Repetition.";
+          } else if (newGame.isInsufficientMaterial()) {
+            reason = "Draw by Insufficient Material.";
+          }
+          setGameOverReason(reason);
+        }
+      } else if (gameId) {
+        // Handle server-side redo for multiplayer mode
+        const res = await fetch(`/api/game/${gameId}/redo`, { method: "POST" });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "Redo failed");
+        // Update will come via socket, no need to set state here
+      }
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -228,14 +348,26 @@ export default function App() {
     }
   };
   const reset = async () => {
-    if (!gameId || !confirm("Reset the board for review?")) return;
+    if (!confirm("Reset the board for review?")) return;
     setLoading(true);
     setErr("");
     try {
-      const res = await fetch(`/api/game/${gameId}/reset`, { method: "POST" });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || "Reset failed");
-      // Update will come via socket, no need to set state here
+      if (gameMode === 'computer') {
+        // Handle local reset for computer mode
+        const newGame = new Chess();
+        setGame(newGame);
+        setFen(newGame.fen());
+        setMoves([]);
+        setRedoMoves([]);
+        setGameOver(false);
+        setGameOverReason("");
+      } else if (gameId) {
+        // Handle server-side reset for multiplayer mode
+        const res = await fetch(`/api/game/${gameId}/reset`, { method: "POST" });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "Reset failed");
+        // Update will come via socket, no need to set state here
+      }
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -331,6 +463,23 @@ useEffect(() => {
       setGame(newGame);
       setMoves(newMoves);
       setFen(newGame.fen());
+      
+      // Check for game over right after computer's move
+      if (newGame.isGameOver()) {
+        setGameOver(true);
+        let reason = "Game Over";
+        if (newGame.isCheckmate()) {
+          const winner = newGame.turn() === 'w' ? 'Black' : 'White';
+          reason = `Checkmate! ${winner} wins.`;
+        } else if (newGame.isStalemate()) {
+          reason = "Stalemate! It's a draw.";
+        } else if (newGame.isThreefoldRepetition()) {
+          reason = "Draw by Threefold Repetition.";
+        } else if (newGame.isInsufficientMaterial()) {
+          reason = "Draw by Insufficient Material.";
+        }
+        setGameOverReason(reason);
+      }
     }, 300);
   };
 
@@ -544,7 +693,7 @@ console.log({
 
             </div>
 
-            {/* Moves List (Mobile, unchanged) */}
+            {/* Moves List (Mobile) */}
             <div style={{ flex: 1 }}>
               {err && <div style={{ color: "crimson", marginBottom: 8 }}>{err}</div>}
               <h2 style={{ textAlign: "center", fontSize: "1.2rem" }}>Moves</h2>
@@ -553,7 +702,7 @@ console.log({
                   marginTop: 8,
                   fontSize: "1rem",
                   textAlign: "left",
-                  maxHeight: "200px",
+                  maxHeight: "400px", // Increased height for better visibility
                   overflowY: "auto",
                   paddingLeft: "1.2em",
                   lineHeight: "1.8em",
@@ -689,7 +838,7 @@ console.log({
 
             </div>
 
-            {/* Moves List (Desktop, unchanged) */}
+            {/* Moves List (Desktop) */}
             <div style={{ flex: 1 }}>
               {err && <div style={{ color: "crimson", marginBottom: 8 }}>{err}</div>}
               <h2 style={{ textAlign: "center", fontSize: "1.2rem" }}>Moves</h2>
@@ -698,7 +847,7 @@ console.log({
                   marginTop: 8,
                   fontSize: "1rem",
                   textAlign: "left",
-                  maxHeight: "200px",
+                  maxHeight: "400px", // Increased height for better visibility
                   overflowY: "auto",
                   paddingLeft: "1.2em",
                   lineHeight: "1.8em",

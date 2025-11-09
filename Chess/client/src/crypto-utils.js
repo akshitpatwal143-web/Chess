@@ -1,7 +1,7 @@
-import EC from 'elliptic';
+import { ec as EC } from 'elliptic';
 import { SHA256 } from 'crypto-js';
 
-const ec = new EC.ec('secp256k1');
+const ec = new EC('secp256k1');
 
 // Generate a new key pair
 export const generateKeys = () => {

@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       // Proxy API requests to your backend server
       '/api': {
-        target: 'http://192.168.1.171:3001',
+        target: 'https://chess-backend-88yn.onrender.com',
         changeOrigin: true,
         secure: false,
       },
