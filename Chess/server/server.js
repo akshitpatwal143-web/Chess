@@ -84,7 +84,11 @@ function verifySignature(publicKey, data, signature) {
 // --- NEW AND MODIFIED ROUTES ---
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
-
+app.get("/join/:id", (req, res) => {
+  const gameId = req.params.id;
+  // This redirects the user's browser to your frontend app at the correct URL
+  res.redirect(`${FRONTEND_URL}/join/${gameId}`);
+});
 // ✅ NEW: Create a new secure session
 app.post("/api/game/create", (req, res) => {
   const { player1PublicKey } = req.body;
